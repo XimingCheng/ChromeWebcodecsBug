@@ -1,6 +1,7 @@
 class WebGLRenderer {
   #canvas = null;
   #ctx = null;
+  #count = null;
 
   static vertexShaderSource = `
     attribute vec2 xy;
@@ -16,18 +17,32 @@ class WebGLRenderer {
   `;
 
   static fragmentShaderSource = `
+    precision mediump float;
     varying highp vec2 uv;
+    uniform mediump vec3 count;
 
     uniform sampler2D texture;
 
     void main(void) {
-      gl_FragColor = texture2D(texture, uv);
+      float data = mod(count.x, 8.0);
+      if (uv.x < 0.1) {
+        if (data < 0.5) gl_FragColor = vec4(0, 0, 0, 1);
+        else if (data < 1.5) gl_FragColor = vec4(0, 0, 1, 1);
+        else if (data < 2.5) gl_FragColor = vec4(0, 1, 0, 1);
+        else if (data < 3.5) gl_FragColor = vec4(0, 1, 1, 1);
+        else if (data < 4.5) gl_FragColor = vec4(1, 0, 0, 1);
+        else if (data < 5.5) gl_FragColor = vec4(1, 0, 1, 1);
+        else if (data < 6.5) gl_FragColor = vec4(1, 1, 0, 1);
+        else gl_FragColor = vec4(1, 1, 1, 1);
+      } else {
+        gl_FragColor = texture2D(texture, uv);
+      }
     }
   `;
 
   constructor(type, canvas) {
     this.#canvas = canvas;
-    const gl = this.#ctx = canvas.getContext(type);
+    const gl = (this.#ctx = canvas.getContext(type));
 
     const vertexShader = gl.createShader(gl.VERTEX_SHADER);
     gl.shaderSource(vertexShader, WebGLRenderer.vertexShaderSource);
@@ -46,21 +61,22 @@ class WebGLRenderer {
     const shaderProgram = gl.createProgram();
     gl.attachShader(shaderProgram, vertexShader);
     gl.attachShader(shaderProgram, fragmentShader);
-    gl.linkProgram (shaderProgram );
+    gl.linkProgram(shaderProgram);
     if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
       throw gl.getProgramInfoLog(shaderProgram);
     }
+    this.#count = gl.getUniformLocation(shaderProgram, "count");
+    gl.uniform3f(this.#count, 0.0, 0.0, 0.0);
     gl.useProgram(shaderProgram);
 
     // Vertex coordinates, clockwise from bottom-left.
     const vertexBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-      -1.0, -1.0,
-      -1.0, +1.0,
-      +1.0, +1.0,
-      +1.0, -1.0
-    ]), gl.STATIC_DRAW);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1.0, -1.0, -1.0, +1.0, +1.0, +1.0, +1.0, -1.0]),
+      gl.STATIC_DRAW
+    );
 
     const xyLocation = gl.getAttribLocation(shaderProgram, "xy");
     gl.vertexAttribPointer(xyLocation, 2, gl.FLOAT, false, 0, 0);
@@ -75,12 +91,12 @@ class WebGLRenderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   }
 
-  draw(frame) {
+  draw(frame, count) {
     this.#canvas.width = frame.displayWidth;
     this.#canvas.height = frame.displayHeight;
 
     const gl = this.#ctx;
-  
+
     // Upload the frame.
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
     frame.close();
@@ -89,8 +105,9 @@ class WebGLRenderer {
     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
     gl.clearColor(1.0, 0.0, 0.0, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.uniform3f(this.#count, count, 0.0, 0.0);
 
     // Draw the frame.
     gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
   }
-};
+}

@@ -1,4 +1,9 @@
-importScripts("demuxer_mp4.js", "renderer_2d.js", "renderer_webgl.js", "renderer_webgpu.js");
+importScripts(
+  "demuxer_mp4.js",
+  "renderer_2d.js",
+  "renderer_webgl.js",
+  "renderer_webgpu.js"
+);
 
 // Status UI. Messages are batched per animation frame.
 let pendingStatus = null;
@@ -7,7 +12,7 @@ function setStatus(type, message) {
   if (pendingStatus) {
     pendingStatus[type] = message;
   } else {
-    pendingStatus = {[type]: message};
+    pendingStatus = { [type]: message };
     self.requestAnimationFrame(statusAnimationFrame);
   }
 }
@@ -21,7 +26,7 @@ function statusAnimationFrame() {
 let renderer = null;
 let pendingFrame = null;
 let startTime = null;
-let frameCount = 0;
+let frameCount = 1;
 
 function renderFrame(frame) {
   if (!pendingFrame) {
@@ -36,12 +41,12 @@ function renderFrame(frame) {
 }
 
 function renderAnimationFrame() {
-  renderer.draw(pendingFrame);
+  renderer.draw(pendingFrame, frameCount);
   pendingFrame = null;
 }
 
 // Startup.
-function start({dataUri, rendererName, canvas}) {
+function start({ dataUri, rendererName, canvas }) {
   // Pick a renderer to use.
   switch (rendererName) {
     case "2d":
@@ -58,38 +63,55 @@ function start({dataUri, rendererName, canvas}) {
       break;
   }
 
+  async function onRecvWebCodecFrame(frame) {
+    // Update statistics.
+    if (startTime == null) {
+      startTime = performance.now();
+    } else {
+      const elapsed = (performance.now() - startTime) / 1000;
+      const fps = ++frameCount / elapsed;
+      setStatus("render", `${fps.toFixed(0)} fps`);
+    }
+
+    // if run the below code (call copyTo), bug will appear
+    const frameSize = frame.allocationSize();
+    const data = new Uint8Array(frameSize);
+    await frame.copyTo(data);
+
+    // Schedule the frame to be rendered.
+    renderFrame(frame);
+  }
+
   // Set up a VideoDecoer.
   const decoder = new VideoDecoder({
     output(frame) {
-      // Update statistics.
-      if (startTime == null) {
-        startTime = performance.now();
-      } else {
-        const elapsed = (performance.now() - startTime) / 1000;
-        const fps = ++frameCount / elapsed;
-        setStatus("render", `${fps.toFixed(0)} fps`);
-      }
-
-      // Schedule the frame to be rendered.
-      renderFrame(frame);
+      onRecvWebCodecFrame(frame);
     },
     error(e) {
       setStatus("decode", e);
-    }
+    },
   });
 
   // Fetch and demux the media data.
   const demuxer = new MP4Demuxer(dataUri, {
     onConfig(config) {
-      setStatus("decode", `${config.codec} @ ${config.codedWidth}x${config.codedHeight}`);
+      // force prefer-hardware
+      config.hardwareAcceleration = "prefer-hardware";
+      config.optimizeForLatency = true;
+      setStatus(
+        "decode",
+        `${config.codec} @ ${config.codedWidth}x${config.codedHeight}`
+      );
       decoder.configure(config);
     },
     onChunk(chunk) {
       decoder.decode(chunk);
     },
-    setStatus
+    setStatus,
   });
 }
 
 // Listen for the start request.
-self.addEventListener("message", message => start(message.data), {once: true});
+self.addEventListener("message", (message) => start(message.data), {
+  once: true,
+});
