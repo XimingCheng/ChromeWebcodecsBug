@@ -27,8 +27,9 @@ let renderer = null;
 let pendingFrame = null;
 let startTime = null;
 let frameCount = 1;
+let savedFrameCount = 1;
 
-function renderFrame(frame) {
+function renderFrame(frame, count) {
   if (!pendingFrame) {
     // Schedule rendering in the next animation frame.
     requestAnimationFrame(renderAnimationFrame);
@@ -38,10 +39,12 @@ function renderFrame(frame) {
   }
   // Set or replace the pending frame.
   pendingFrame = frame;
+  savedFrameCount = count;
 }
 
 function renderAnimationFrame() {
-  renderer.draw(pendingFrame, frameCount);
+  console.log("savedFrameCount ", savedFrameCount);
+  renderer.draw(pendingFrame, savedFrameCount);
   pendingFrame = null;
 }
 
@@ -72,6 +75,7 @@ function start({ dataUri, rendererName, canvas }) {
       const fps = ++frameCount / elapsed;
       setStatus("render", `${fps.toFixed(0)} fps`);
     }
+    console.log("onRecvWebCodecFrame ", frameCount);
 
     // if run the below code (call copyTo), bug will appear
     const frameSize = frame.allocationSize();
@@ -79,7 +83,7 @@ function start({ dataUri, rendererName, canvas }) {
     await frame.copyTo(data);
 
     // Schedule the frame to be rendered.
-    renderFrame(frame);
+    renderFrame(frame, frameCount);
   }
 
   // Set up a VideoDecoer.
